@@ -28,7 +28,7 @@ concurrentHashMap
 在并发变成下，size和isEmpty这样的方法几乎没用处，因为目标是变化的，所以对这些操作的需求被弱化了  
 
 
-Blocking queue 提供了课阻塞的put和take方法，若queue满了，put方法会被阻塞直到用空间可用，如果queue是空的，那么take方法将被阻塞，直到有元素可用。 
+Blocking queue 提供了可阻塞的put和take方法，若queue满了，put方法会被阻塞直到用空间可用，如果queue是空的，那么take方法将被阻塞，直到有元素可用。 
 阻塞队列支持生产者消费者设计模式，用它可以解除生产者和消费者代码之间的依赖关系，降低了耦合度，推荐使用阻塞队列解决上述问题。
 LinkedBlockingQueue和ArrayBlockingQueue是FIFO队列，
 PriorityBlockingQueue是一个按优先级书序排序的队列可以用Comparatoy进行排序。
@@ -36,7 +36,7 @@ SynchronousQueue，这不是一个真正的队列，他不会为队列元素提�
 
 双端队列？？？  
 
-latch闭锁，等待未完成的时间完成，再开始后续的作业。  
+latch闭锁，等待未完成的事件完成，再开始后续的作业。  
 CountDownLatch包含一个计数器，初始化为一个整数，用来表现需要等待的事件数，countDown方法对计数器做减操作，表示一个时间已经发生。若计数器的值非零，则await会阻塞到计或者等待线程中断或超时。  
 
 
@@ -102,7 +102,7 @@ Page127
 实质若在一个单线程化的executor中，一个任务将另外一个任务提交到相同的executor中，并等待新提交任务的结果，则很容易发生死锁（第二个任务会因为等待第一个任务而滞留在工作队列中）。在一个大的线程池中，如果所有线程真行的任务都阻塞在线程池中，等待着处于同一工作队列的其他任务。那么会发生同一的问题，这被称作线程饥饿死锁
 耗时操作
 2.耗时操作
-如果提交的任务时间周期过长，及时不会出现死活，线程池的响应也会变得很差
+如果提交的任务时间周期过长，及时不会出现死锁，线程池的响应也会变得很差
 
 制定线程池的大小
 它的长度不是一门精确的学科，只要避免过大会过小两种极端，例如使用Runtime.availableProcessors的结果，进行动态的计算。
@@ -111,10 +111,18 @@ Page127
 
 ThreadPoolExecutor，为Executors中的工厂newCachdThreadPool，newFixedThreadPool以及newScheduledThreadExecutor返回的。我们可以利用它来定制我们的线程池。
 
+Page173
 
+管理线程队列。（线程池优点）
+原本如果线程过多，未处理的线程会竞争已经空闲的线程，消耗了资源。如果使用线程池的话，还未处理的线程会被放在线程池所包含的BlockingQueue中。任务排队有3中基本方法：无限队列，有限队列和同步提交（synchronous ahndoff）
+newFixedBlockingQueue和isingled使用的是无限队列LInkedBlockingQueue。如果所有的工作线程都处于忙碌状态，任务将会在队列中等候。如果任务持续的快速到达，超过了他们被执行的速度，队列也会无限制的增加。
 
+一个较为稳妥的策略就是使用优先队列，比如ArrayBlockingQueue或者有限的LinkedBlockingQueue以及PriorityBlockingQueue。有助于避免资源耗尽。但队伍满之后，新的任务怎么办？饱和策略可以出来这个问题。技巧：一个大队列和一个小池，可以控制对内存和CPU的使用，减少上下文的切换，但可能要接受潜在吞吐量约束的开销。
+对于庞大活无限的池，可以使用SynchronousQueue，绕开队列，将任务直接交给工作线程。只有当池是无限的时候或者可以接受任务呗拒绝，它才有价值。newCachedThreadPool就使用了这种方式。
+当任务彼此独立时，有限的工作队列是合理的,当任务仙湖依赖时，可以选择用无线的线程池来处理任务。
 
-
+饱和策略
+当有限队列充满后，饱和策略开始工作。ThreadPoolExecutor的饱和策略可以通过setRejectedExecutionHandler来修修改。终止（默认的策略，会跑出RejectedExecutorException），遗弃（放弃这个任务），调用者运行（不会丢弃和跑出异常，会把任务退回到调用者哪里）
 
 
 
