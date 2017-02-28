@@ -1,0 +1,261 @@
+找出需要优化的sql语句
+使用慢查询日志
+
+慢查询有什么用?
+
+它能记录下所有执行超过long_query_time时间的SQL语句, 帮你找到执行慢的SQL, 方便我们对这些SQL进行优化.
+
+慢查询有什么用?
+
+它能记录下所有执行超过long_query_time时间的SQL语句, 帮你找到执行慢的SQL, 方便我们对这些SQL进行优化.
+
+如何开启慢查询?
+
+1)查看mysql是否开启慢查询日志
+	show variables like 'slow_query_log';
+2)设置没有索引的记录到慢查询日志
+	set global log_queries_not_using_indexes=on;
+3)查看超过多长时间的sql进行记录到慢查询日志
+	show variables like 'long_query_time'
+4)开启慢查询日志
+	set global slow_query_log=on
+
+首先我们先查看MYSQL服务器的慢查询状态是否开启.执行如下命令:
+
+show variables like '%quer%';
+
+我们可以看到当前log_slow_queries状态为OFF, 说明当前并没有开启慢查询.
+
+开启慢查询非常简单, 操作如下:
+
+在[mysqld]中添加如下信息：
+
+[mysqld]
+
+log-slow-queries="C:/Program Files/MySQL/MySQL Server 5.5/log/mysql-slow.log"
+long_query_time = 4
+
+log-queries-not-using-indexes
+
+log-slow-queries: 代表MYSQL慢查询的日志存储目录, 此目录文件一定要有写权限；
+
+Windows下需要写绝对路径，如：log-slow-queries="C:/Program Files/MySQL/MySQL Server 5.5/log/mysql-slow.log"
+
+long_query_time: 最长执行时间. (如图, MSYQL将记录下所有执行时间超过2条的SQL语句, 此处为测试时间, 时间不应太小最好在5-10秒之内, 当然可以根据自己的标准而定);
+
+log-queries-not-using-indexes    ：没有使用到索引的查询也将被记录在日志中
+
+配置好以后重新启动一个MYSQL服务
+
+慢查询日志所包含的内容
+执行SQL的主机信息
+# Time: 2016-10-28T15:59:22.416695Z 解释:慢查询执行的时间点
+# User@Host: root[root] @ localhost []  解释:执行SQL的主机信息
+# Query_time: 0.003073  Lock_time: 0.001320 Rows_sent: 2  Rows_examined: 2  解释:SQL执行的信息，Query_time指查询所有时间，Lock_time指锁定时间，Rows_sent发送的行数，Rows_examined扫描的行数
+SET timestamp=1477670362;   解释:以时间戳的形式记录了此SQL执行的时间
+select * from store limit 10;   解释:SQL的具体内容
+
+优化工具
+1.Mysqldumpslow
+安装mysql时自带的mysql慢查询日志分析工具
+但工具展示的信息还不够全面,主要是主机信息,sql以及当前sql执行的次数,消耗的时间
+使用方式:
+    mysqldumpslow -h (可以列出参数的帮助列表) 需要分析的慢查询日志文件.
+    eg：查看TOP3慢日志 mysqldumpslow -t 3 /home/mysql/data/mysql-slow.log | more
+
+
+2.pt-query-digest
+分析慢查询日志文件比mysqldumpslow更丰富: 1.显示日志的时间范围,以及总的sql数量.2.表的统计信息sql响应时间和执行次数。3.具体的sql
+解决: 
+1.查询时间长,查询次数多
+2.IO大的sql,分析Rows Examine项,扫描的行数
+3.未命中索引的sql,分析Rows Examine与Rows send发送的行数的对比
+
+如何通过慢查日志发现有问题的SQL？
+1.查询次数多且每次查询占用时间长的SQL
+通常为pt-query-digest分析的前几个查询
+2.IO大的SQL，数据库的主要瓶颈就在于IO
+注意pt-query-digest分析中的Rows examine项。扫描行数多，占用io大
+3.未命中索引的SQL
+注意pt-query-digest分析中Rows examine（扫描行数）和Rows send（发送行数）的对比
+如果这个比值比较大，说明索引命中率不高
+
+
+explain 可以用来分析sql语句的执行计划
+
+table：表名；
+mysql>explain select customer_id,first_name,last_name from customer;
+
+|id|select_type|table |type|possible_keys|key|key_len|ref|rows|Extra|
++....+...........+.......+.......+.........+.......+...+....+....+..+
+|1 |SIMPLE     |customer|ALL|NULL        |NULL...........|671|.......
+
+
+
+explain返回各列的含义
+
+table :显示这一行的数据是哪张表的
+
+type:这是重要的列， 显示连接使用了何种类型。从最好到最差的连接类型为
+     const  常数查找 唯一索引或卫衣主键查找
+     eq_reg 范围查找 主键范围查找等
+     ref   一个表是基于某一个表的查找
+     range  基于索引的范围查找
+     index  基于索引的扫描
+     ALL    全表扫描
+
+possible_keys:显示可能应用在这张表中的索引。如果为空，没有可能的索引
+
+key:实际使用的索引。如果为NULL，则没有使用索引
+
+key_len:使用索引的长度。在不损失精确性的情况下，长度越短越好
+
+ref:显示索引的哪一列被使用了，如果可能的话，是一个常数
+
+rows:MySQL认为必须检查的用来请求数据的的行数
+
+Extra:扩展列 需要注意的返回值
+
+      Using filesort:看到这个的时候，查询就需要优化了。MySQL需要进行
+      额外的步骤来发现如何对返回的行排序。它根据连接类型以及存储排序键
+      值和匹配条件的全部行的指针来排序全部行
+
+      Using temporary:看到这个的时候，查询需要优化了。这里MySQL需要创建
+      临时表来存储结果，这通常发生在对不同的列集进行order by 上，而不是
+      group by 上。
+
+
+eg:
+ explain select customer_id,first_name,last_name from customer;
+
++----+-------------+----------+------+---------------+------+---------+------+------+-------+
+| id | select_type | table | type | possible_keys | key | key_len | ref | rows | Extra |
++----+-------------+----------+------+---------------+------+---------+------+------+-------+
+| 1 | SIMPLE | customer | ALL | NULL | NULL | NULL | NULL | 599 | NULL |
++----+-------------+----------+------+---------------+------+---------+------+------+-------+
+
+
+count()和max()的优化方法
+优化max（）函数
+
+select max(payment_date) from payment;
+
+mysql>explain select max(payment_date) from payment \G;
+
+这里最后加了个\G   能使输出按列打印
+
+
+这个查询rows 如果IO负荷很大的话，则不是一个很好的SQL，需要优化
+
+那怎么优化呢？
+
+在payment_date列上建立索引
+mysql>create index idx_paydate on payment(pay_date);
+
+再次expain这条查询语句，性能明显有很大的提高，因为索引是顺序排列的
+，通过索引的信息，查询很快就能知道哪条最大
+
+－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－－
+在一条SQL中同时查出2006年和2007年电影的数量－－优化count()
+
+错误的方式：
+
+select count(release_year='2007' or release_year='2007') from film;
+无法分开计算2006和2007年电影的数量
+select count(*) from film where release_year='2006' and release_year='2007';
+
+明显有错误，发布年份不能同时是2006和2007
+
+有很多人会疑问是用count(*)  好呢 还是count(id)好， 还是count(1)好？ 这两种的选择有时候执行结果是不一样的。
+
+e.g:
+
+mysql>create table t(id int);
+mysql>insert into t(id) values(1);
+mysql>insert into t(id) values(2);
+mysql>insert into t(id) values(null);
+mysql>select * from t;
++------------+
+|   id       |
++------------+
+|    1       |
+|    2       |
+|    NULL|
+mysql>select count(*),count(1)，count(id) from t;
+
+结果：count(*)=3条   ;  count(1)=3条  count(id)=2条
+
+因为count(*) ,count(1)包括null值，count(id)忽略null值
+
+
+最后：count的正确语句是：
+
+select count(release_year='2006' or NULL) ,
+            count(release_year='2007' or NULL)
+  from film;
+
+
+子查询的优化
+通常情况下，需要把子查询优化为join查询，但是优化时要注意关联键是否有
+一对多关系，要注意重复数据。
+（查询sandra出演的所有影片）
+explain select title,release_year,length
+from film
+where film_id in (
+    select film_id from film_actor where actor_id in (
+       select actor_id from actor where film_name='sandra'
+    )
+)
+
+e.g:
+
+table t:        table t1:
+
+id              tid
+-----           -------- 
+1               1
+                 1
+select * from t where t.id in (select tid from t1);
+返回一条数据
+select t.id from t join t1 on t.id = t1.tid;
+返回两条数据    出现数据重复  可用distinct解决
+
+优化group by查询
+
+explain select actor.first_name,actor.last_name,count(*)
+from sakila.film_actor inner join sakila.actor using(actor_id)
+group by film_actor.actor_id;
+*************************************************************
+Extra:Using temporary; Using filesort
+
+ 用到了临时表和文件排序
+
+ 为了避免临时表盒文件排序，优化如下：
+ explain select actor.first_name,actor.last_name,c.cnt from 
+ sakila.actor inner join (select actor_id,count(*) as cnt from sakila.film_actor
+ group by actor_id) as c using (actor_id);
+
+ 但是优化也不是一成不变的，增加查询条件的时候，我们相应的需要作出调整，将条件加大子查询里面，
+ 缩小匹配的范围
+ 
+limit常用于分页处理，时常伴随order by 从句使用，因此大多时候会使用
+Filesorts这样会造成大量的IO问题
+
+select film_id,description from sakila.film order by title limit 50,5;
+
+优化策略1:使用有索引的列或主键进行order by操作
+select film_id,description from sakila.film order by film_id limit 50,5;
+
+但是随着id越老越大，IO操作越来越多，需要进一步优化
+
+优化策略2:记录赏赐返回的主键，在下次查询时使用主键过滤
+select file_id,description from sakila.film where film_id>55 and 
+film_id <=60 order by film_id limit 1,5
+
+但是这种优化有个缺点就是要求ID连续的，如果ID不连续的话，会有问题，可以创建连续自增的列来实现
+
+
+
+
+
+
